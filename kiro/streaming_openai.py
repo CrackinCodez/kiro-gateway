@@ -30,7 +30,7 @@ Uses streaming_core.py for parsing Kiro stream into unified KiroEvent objects.
 
 import json
 import time
-from typing import TYPE_CHECKING, AsyncGenerator, Callable, Awaitable, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Callable, Awaitable, Dict, Optional
 
 import httpx
 from fastapi import HTTPException
@@ -76,7 +76,8 @@ async def stream_kiro_to_openai_internal(
     auth_manager: "KiroAuthManager",
     first_token_timeout: float = FIRST_TOKEN_TIMEOUT,
     prompt_tokens: int = 0,
-    conversation_id: Optional[str] = None
+    conversation_id: Optional[str] = None,
+    tool_name_mapping: Optional[Dict[str, str]] = None
 ) -> AsyncGenerator[str, None]:
     """
     Internal generator for converting Kiro stream to OpenAI format.
@@ -238,6 +239,10 @@ async def stream_kiro_to_openai_internal(
                 tool_name = func.get("name") or ""
                 tool_args = func.get("arguments") or "{}"
                 
+                # Reverse truncated tool name back to original
+                if tool_name_mapping and tool_name in tool_name_mapping:
+                    tool_name = tool_name_mapping[tool_name]
+                
                 logger.debug(f"Tool call [{idx}] '{tool_name}': id={tc.get('id')}, args_length={len(tool_args)}")
                 
                 indexed_tc = {
@@ -355,7 +360,8 @@ async def stream_kiro_to_openai(
     model: str,
     model_cache: "ModelInfoCache",
     auth_manager: "KiroAuthManager",
-    prompt_tokens: int = 0
+    prompt_tokens: int = 0,
+    tool_name_mapping: Optional[Dict[str, str]] = None
 ) -> AsyncGenerator[str, None]:
     """
     Generator for converting Kiro stream to OpenAI format.
@@ -370,13 +376,15 @@ async def stream_kiro_to_openai(
         model_cache: Model cache for getting token limits
         auth_manager: Authentication manager
         prompt_tokens: Pre-counted prompt tokens (from full Kiro payload)
+        tool_name_mapping: Mapping of truncated tool names back to originals
 
     Yields:
         Strings in SSE format: "data: {...}\\n\\n" or "data: [DONE]\\n\\n"
     """
     async for chunk in stream_kiro_to_openai_internal(
         client, response, model, model_cache, auth_manager,
-        prompt_tokens=prompt_tokens
+        prompt_tokens=prompt_tokens,
+        tool_name_mapping=tool_name_mapping
     ):
         yield chunk
 
@@ -468,7 +476,8 @@ async def collect_stream_response(
     model: str,
     model_cache: "ModelInfoCache",
     auth_manager: "KiroAuthManager",
-    prompt_tokens: int = 0
+    prompt_tokens: int = 0,
+    tool_name_mapping: Optional[Dict[str, str]] = None
 ) -> dict:
     """
     Collect full response from streaming stream.
@@ -499,7 +508,8 @@ async def collect_stream_response(
         model,
         model_cache,
         auth_manager,
-        prompt_tokens=prompt_tokens
+        prompt_tokens=prompt_tokens,
+        tool_name_mapping=tool_name_mapping
     ):
         if not chunk_str.startswith("data:"):
             continue

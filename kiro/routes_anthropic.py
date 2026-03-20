@@ -257,11 +257,13 @@ async def messages(
         profile_arn_for_payload = auth_manager.profile_arn
     
     try:
-        kiro_payload = anthropic_to_kiro(
+        kiro_result = anthropic_to_kiro(
             request_data,
             conversation_id,
             profile_arn_for_payload
         )
+        kiro_payload = kiro_result.payload
+        tool_name_mapping = kiro_result.tool_name_mapping
     except ValueError as e:
         logger.error(f"Conversion error: {e}")
         return JSONResponse(
@@ -369,7 +371,8 @@ async def messages(
                         request_data.model,
                         model_cache,
                         auth_manager,
-                        prompt_tokens=kiro_payload_prompt_tokens
+                        prompt_tokens=kiro_payload_prompt_tokens,
+                        tool_name_mapping=tool_name_mapping
                     ):
                         yield chunk
                 except GeneratorExit:
@@ -416,7 +419,8 @@ async def messages(
                 request_data.model,
                 model_cache,
                 auth_manager,
-                prompt_tokens=kiro_payload_prompt_tokens
+                prompt_tokens=kiro_payload_prompt_tokens,
+                tool_name_mapping=tool_name_mapping
             )
             
             await http_client.close()
@@ -482,7 +486,7 @@ async def count_tokens_endpoint(
             request_data,
             conversation_id,
             profile_arn_for_payload
-        )
+        ).payload
     except ValueError as e:
         logger.error(f"Conversion error in count_tokens: {e}")
         return JSONResponse(

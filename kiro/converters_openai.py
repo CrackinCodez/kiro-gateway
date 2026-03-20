@@ -345,4 +345,4 @@ def build_kiro_payload(
         inject_thinking=True
     )
     
-    return result.payload
+    return result

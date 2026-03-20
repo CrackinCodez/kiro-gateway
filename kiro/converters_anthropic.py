@@ -424,4 +424,4 @@ def anthropic_to_kiro(
         inject_thinking=True,
     )
 
-    return result.payload
+    return result

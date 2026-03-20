@@ -104,7 +104,8 @@ async def stream_kiro_to_anthropic(
     auth_manager: "KiroAuthManager",
     first_token_timeout: float = FIRST_TOKEN_TIMEOUT,
     prompt_tokens: int = 0,
-    conversation_id: Optional[str] = None
+    conversation_id: Optional[str] = None,
+    tool_name_mapping: Optional[Dict[str, str]] = None
 ) -> AsyncGenerator[str, None]:
     """
     Generator for converting Kiro stream to Anthropic SSE format.
@@ -297,6 +298,10 @@ async def stream_kiro_to_anthropic(
                 tool_name = tool.get("function", {}).get("name", "") or tool.get("name", "")
                 tool_input = tool.get("function", {}).get("arguments", {}) or tool.get("input", {})
                 
+                # Reverse truncated tool name back to original
+                if tool_name_mapping and tool_name in tool_name_mapping:
+                    tool_name = tool_name_mapping[tool_name]
+                
                 # Check if this tool was truncated
                 if tool.get('_truncation_detected'):
                     truncated_tools.append({
@@ -379,6 +384,10 @@ async def stream_kiro_to_anthropic(
                 tool_id = tc.get("id") or f"toolu_{uuid.uuid4().hex[:24]}"
                 tool_name = tc.get("function", {}).get("name", "")
                 tool_input = tc.get("function", {}).get("arguments", {})
+                
+                # Reverse truncated tool name back to original
+                if tool_name_mapping and tool_name in tool_name_mapping:
+                    tool_name = tool_name_mapping[tool_name]
                 
                 if isinstance(tool_input, str):
                     try:
@@ -536,7 +545,8 @@ async def collect_anthropic_response(
     model: str,
     model_cache: "ModelInfoCache",
     auth_manager: "KiroAuthManager",
-    prompt_tokens: int = 0
+    prompt_tokens: int = 0,
+    tool_name_mapping: Optional[Dict[str, str]] = None
 ) -> dict:
     """
     Collect full response from Kiro stream in Anthropic format.
@@ -589,6 +599,10 @@ async def collect_anthropic_response(
         tool_id = tc.get("id") or f"toolu_{uuid.uuid4().hex[:24]}"
         tool_name = tc.get("function", {}).get("name", "") or tc.get("name", "")
         tool_input = tc.get("function", {}).get("arguments", {}) or tc.get("input", {})
+        
+        # Reverse truncated tool name back to original
+        if tool_name_mapping and tool_name in tool_name_mapping:
+            tool_name = tool_name_mapping[tool_name]
         
         if isinstance(tool_input, str):
             try:
