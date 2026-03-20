@@ -506,4 +506,7 @@ async def count_tokens_endpoint(
 
     logger.info(f"Token count estimate: {input_tokens} (payload size: {len(kiro_request_body)} chars)")
 
-    return JSONResponse(content={"input_tokens": input_tokens})
+    return JSONResponse(content={
+        "input_tokens": input_tokens,
+        "context_management": {"original_input_tokens": input_tokens}
+    })

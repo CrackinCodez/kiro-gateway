@@ -341,6 +341,10 @@ def convert_anthropic_tools(
     """
     Converts Anthropic tools to unified format.
 
+    Silently skips Anthropic built-in server tools (web_search, code_execution,
+    bash, text_editor, etc.) that have no input_schema, since the Kiro API
+    cannot handle them.
+
     Args:
         tools: List of Anthropic tools
 
@@ -356,11 +360,18 @@ def convert_anthropic_tools(
         if isinstance(tool, dict):
             name = tool.get("name", "")
             description = tool.get("description")
-            input_schema = tool.get("input_schema", {})
+            input_schema = tool.get("input_schema")
+            tool_type = tool.get("type")
         else:
-            name = tool.name
-            description = tool.description
-            input_schema = tool.input_schema
+            name = getattr(tool, "name", "") or ""
+            description = getattr(tool, "description", None)
+            input_schema = getattr(tool, "input_schema", None)
+            tool_type = getattr(tool, "type", None)
+
+        # Skip built-in server tools (no input_schema) — Kiro API can't handle them
+        if not input_schema:
+            logger.debug(f"Skipping server tool '{name or tool_type}' (no input_schema)")
+            continue
 
         unified_tools.append(
             UnifiedTool(name=name, description=description, input_schema=input_schema)
