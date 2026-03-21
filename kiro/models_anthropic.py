@@ -78,20 +78,44 @@ class ToolUseContentBlock(BaseModel):
     input: Dict[str, Any]
 
 
+class ToolReferenceContentBlock(BaseModel):
+    """Tool reference block used by Anthropic's tool search / defer_loading feature."""
+
+    type: Literal["tool_reference"] = "tool_reference"
+    tool_name: str
+    model_config = {"extra": "allow"}
+
+
+class ServerToolUseContentBlock(BaseModel):
+    """Server-side tool use block (e.g., tool_search invocations handled by Anthropic API)."""
+
+    type: Literal["server_tool_use"] = "server_tool_use"
+    model_config = {"extra": "allow"}
+
+
+class ToolSearchResultContentBlock(BaseModel):
+    """Tool search result block returned by Anthropic's tool search feature."""
+
+    type: Literal["tool_search_tool_result"] = "tool_search_tool_result"
+    model_config = {"extra": "allow"}
+
+
 class ToolResultContentBlock(BaseModel):
     """
     Tool result content block in Anthropic format.
 
     Represents the result of a tool call, sent by the user.
-    Tool results can contain text, images, or a mix of both.
+    Tool results can contain text, images, tool references, or a mix.
     """
 
     type: Literal["tool_result"] = "tool_result"
     tool_use_id: str
     content: Optional[
-        Union[str, List[Union["TextContentBlock", "ImageContentBlock"]]]
+        Union[str, List[Union["TextContentBlock", "ImageContentBlock", "ToolReferenceContentBlock"]]]
     ] = None
     is_error: Optional[bool] = None
+
+    model_config = {"extra": "allow"}
 
 
 # ==================================================================================================
@@ -146,13 +170,16 @@ class ImageContentBlock(BaseModel):
     source: Union[Base64ImageSource, URLImageSource]
 
 
-# Union type for all content blocks (including images and thinking)
+# Union type for all content blocks (including images, thinking, and tool search)
 ContentBlock = Union[
     TextContentBlock,
     ThinkingContentBlock,
     ImageContentBlock,
     ToolUseContentBlock,
     ToolResultContentBlock,
+    ToolReferenceContentBlock,
+    ServerToolUseContentBlock,
+    ToolSearchResultContentBlock,
 ]
 
 
