@@ -341,11 +341,17 @@ def convert_anthropic_tools(
     """
     Converts Anthropic tools to unified format.
 
+    Silently skips Anthropic built-in server tools (web_search, code_execution,
+    bash, text_editor, tool_search_tool_*, etc.) that have no input_schema,
+    since the Kiro API cannot handle them.
+
+    Preserves ``defer_loading`` flag on each tool for downstream expansion.
+
     Args:
-        tools: List of Anthropic tools
+        tools: List of Anthropic tools from the request.
 
     Returns:
-        List of tools in unified format, or None if no tools
+        List of unified tools, or None if no valid tools found.
     """
     if not tools:
         return None
@@ -356,14 +362,22 @@ def convert_anthropic_tools(
         if isinstance(tool, dict):
             name = tool.get("name", "")
             description = tool.get("description")
-            input_schema = tool.get("input_schema", {})
+            input_schema = tool.get("input_schema")
+            defer_loading = tool.get("defer_loading", False)
         else:
-            name = tool.name
-            description = tool.description
-            input_schema = tool.input_schema
+            name = getattr(tool, "name", "") or ""
+            description = getattr(tool, "description", None)
+            input_schema = getattr(tool, "input_schema", None)
+            defer_loading = getattr(tool, "defer_loading", False)
+
+        # Skip built-in server tools (no input_schema) — Kiro API can't handle them
+        if input_schema is None:
+            logger.debug(f"Skipping server tool '{name}' (no input_schema)")
+            continue
 
         unified_tools.append(
-            UnifiedTool(name=name, description=description, input_schema=input_schema)
+            UnifiedTool(name=name, description=description, input_schema=input_schema,
+                        _defer_loading=defer_loading)
         )
 
     return unified_tools if unified_tools else None
@@ -398,6 +412,40 @@ def anthropic_to_kiro(
 
     # Convert tools to unified format
     unified_tools = convert_anthropic_tools(request.tools)
+
+    # Handle defer_loading: separate deferred tools, expand referenced ones
+    if unified_tools:
+        deferred_by_name = {t.name: t for t in unified_tools if t._defer_loading}
+        if deferred_by_name:
+            active_tools = [t for t in unified_tools if not t._defer_loading]
+
+            # Scan messages for tool_reference blocks and expand those tools
+            referenced_names: set[str] = set()
+            for msg in request.messages:
+                if not isinstance(msg.content, list):
+                    continue
+                for block in msg.content:
+                    raw = block if isinstance(block, dict) else block.__dict__ if hasattr(block, '__dict__') else {}
+                    if isinstance(raw, dict):
+                        if raw.get("type") == "tool_reference":
+                            referenced_names.add(raw.get("tool_name", ""))
+                        if raw.get("type") == "tool_result":
+                            inner = raw.get("content")
+                            if isinstance(inner, list):
+                                for item in inner:
+                                    if isinstance(item, dict) and item.get("type") == "tool_reference":
+                                        referenced_names.add(item.get("tool_name", ""))
+
+            for name in referenced_names:
+                if name in deferred_by_name:
+                    active_tools.append(deferred_by_name[name])
+
+            n_expanded = len(referenced_names & set(deferred_by_name))
+            logger.info(
+                f"[Tool Search] {len(active_tools)} active, {len(deferred_by_name)} deferred, "
+                f"{n_expanded} expanded from tool_reference"
+            )
+            unified_tools = active_tools if active_tools else None
 
     # System prompt is already separate in Anthropic format!
     # It can be a string or list of content blocks (for prompt caching)
