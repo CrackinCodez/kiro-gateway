@@ -44,6 +44,18 @@ from kiro.converters_core import (
 )
 
 
+def _normalize_content_block(block: Any) -> Dict[str, Any]:
+    """Normalize content block objects to a dict for consistent inspection."""
+    if isinstance(block, dict):
+        return block
+    if hasattr(block, "model_dump"):
+        # Pydantic v2 models used by Anthropic content blocks
+        return block.model_dump(exclude_none=False)
+    if hasattr(block, "__dict__"):
+        return dict(block.__dict__)
+    return {}
+
+
 def convert_anthropic_content_to_text(content: Any) -> str:
     """
     Extracts text content from Anthropic message content.
@@ -425,16 +437,21 @@ def anthropic_to_kiro(
                 if not isinstance(msg.content, list):
                     continue
                 for block in msg.content:
-                    raw = block if isinstance(block, dict) else block.__dict__ if hasattr(block, '__dict__') else {}
-                    if isinstance(raw, dict):
-                        if raw.get("type") == "tool_reference":
-                            referenced_names.add(raw.get("tool_name", ""))
-                        if raw.get("type") == "tool_result":
-                            inner = raw.get("content")
-                            if isinstance(inner, list):
-                                for item in inner:
-                                    if isinstance(item, dict) and item.get("type") == "tool_reference":
-                                        referenced_names.add(item.get("tool_name", ""))
+                    raw = _normalize_content_block(block)
+                    if raw.get("type") == "tool_reference":
+                        tool_name = raw.get("tool_name", "")
+                        if tool_name:
+                            referenced_names.add(tool_name)
+
+                    if raw.get("type") == "tool_result":
+                        inner = raw.get("content")
+                        if isinstance(inner, list):
+                            for item in inner:
+                                inner_raw = _normalize_content_block(item)
+                                if inner_raw.get("type") == "tool_reference":
+                                    tool_name = inner_raw.get("tool_name", "")
+                                    if tool_name:
+                                        referenced_names.add(tool_name)
 
             for name in referenced_names:
                 if name in deferred_by_name:

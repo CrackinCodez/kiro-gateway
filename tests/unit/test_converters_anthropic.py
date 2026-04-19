@@ -31,6 +31,7 @@ from kiro.models_anthropic import (
     AnthropicMessage,
     AnthropicTool,
     TextContentBlock,
+    ToolReferenceContentBlock,
     ToolUseContentBlock,
     ToolResultContentBlock,
     SystemContentBlock,
@@ -1536,6 +1537,126 @@ class TestAnthropicToKiro:
         print(f"Tools in payload: {tools}")
         assert len(tools) == 1
         assert tools[0]["toolSpecification"]["name"] == "get_weather"
+
+    def test_expands_deferred_tool_from_dict_tool_reference_in_tool_result(self):
+        """
+        What it does: Verifies deferred tools are expanded from dict tool_reference blocks.
+        Purpose: Prevent regressions in Claude Code tool search expansion flow.
+        """
+        print("Setup: Request with one active tool, one deferred tool, and dict tool_reference...")
+        request = AnthropicMessagesRequest(
+            model="claude-sonnet-4-5",
+            messages=[
+                AnthropicMessage(
+                    role="user",
+                    content=[
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_1",
+                            "content": [
+                                {
+                                    "type": "tool_reference",
+                                    "tool_name": "mcp_tool_a",
+                                }
+                            ],
+                        }
+                    ],
+                )
+            ],
+            max_tokens=1024,
+            tools=[
+                AnthropicTool(
+                    name="active_tool",
+                    description="Always available",
+                    input_schema={"type": "object", "properties": {}},
+                    defer_loading=False,
+                ),
+                AnthropicTool(
+                    name="mcp_tool_a",
+                    description="Deferred MCP tool",
+                    input_schema={"type": "object", "properties": {}},
+                    defer_loading=True,
+                ),
+            ],
+        )
+
+        print("Action: Converting to Kiro payload...")
+        with patch(
+            "kiro.converters_anthropic.get_model_id_for_kiro",
+            return_value="claude-sonnet-4.5",
+        ):
+            with patch("kiro.converters_core.FAKE_REASONING_ENABLED", False):
+                result = anthropic_to_kiro(request, "conv-123", "arn:aws:test").payload
+
+        context = result["conversationState"]["currentMessage"]["userInputMessage"].get(
+            "userInputMessageContext", {}
+        )
+        tools = context.get("tools", [])
+        tool_names = [t["toolSpecification"]["name"] for t in tools]
+        print(f"Tools in payload: {tool_names}")
+
+        assert "active_tool" in tool_names
+        assert "mcp_tool_a" in tool_names
+
+    def test_expands_deferred_tool_from_pydantic_tool_reference_in_tool_result(self):
+        """
+        What it does: Verifies deferred tools are expanded from Pydantic tool_reference blocks.
+        Purpose: Ensure model-validated content blocks still trigger defer_loading expansion.
+        """
+        print("Setup: Request with Pydantic ToolResultContentBlock containing ToolReferenceContentBlock...")
+        request = AnthropicMessagesRequest(
+            model="claude-sonnet-4-5",
+            messages=[
+                AnthropicMessage(
+                    role="user",
+                    content=[
+                        ToolResultContentBlock(
+                            type="tool_result",
+                            tool_use_id="call_2",
+                            content=[
+                                ToolReferenceContentBlock(
+                                    type="tool_reference",
+                                    tool_name="mcp_tool_b",
+                                )
+                            ],
+                        )
+                    ],
+                )
+            ],
+            max_tokens=1024,
+            tools=[
+                AnthropicTool(
+                    name="active_tool",
+                    description="Always available",
+                    input_schema={"type": "object", "properties": {}},
+                    defer_loading=False,
+                ),
+                AnthropicTool(
+                    name="mcp_tool_b",
+                    description="Deferred MCP tool",
+                    input_schema={"type": "object", "properties": {}},
+                    defer_loading=True,
+                ),
+            ],
+        )
+
+        print("Action: Converting to Kiro payload...")
+        with patch(
+            "kiro.converters_anthropic.get_model_id_for_kiro",
+            return_value="claude-sonnet-4.5",
+        ):
+            with patch("kiro.converters_core.FAKE_REASONING_ENABLED", False):
+                result = anthropic_to_kiro(request, "conv-123", "arn:aws:test").payload
+
+        context = result["conversationState"]["currentMessage"]["userInputMessage"].get(
+            "userInputMessageContext", {}
+        )
+        tools = context.get("tools", [])
+        tool_names = [t["toolSpecification"]["name"] for t in tools]
+        print(f"Tools in payload: {tool_names}")
+
+        assert "active_tool" in tool_names
+        assert "mcp_tool_b" in tool_names
 
     def test_builds_history_for_multi_turn(self):
         """
