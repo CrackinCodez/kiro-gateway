@@ -29,3 +29,4 @@ requests/
 .pytest_cache/
 .coverage
 htmlcov/
+data.sqlite3

@@ -45,13 +45,19 @@ def get_machine_fingerprint() -> str:
         SHA256 hash of the string "{hostname}-{username}-kiro-gateway"
     """
     try:
+        import os
         import socket
         import getpass
-        
+
         hostname = socket.gethostname()
-        username = getpass.getuser()
+
+        try:
+            username = getpass.getuser()
+        except KeyError:
+            # Can happen in containers when UID exists but has no /etc/passwd entry.
+            username = os.getenv("USER") or os.getenv("LOGNAME") or f"uid-{os.getuid()}"
+
         unique_string = f"{hostname}-{username}-kiro-gateway"
-        
         return hashlib.sha256(unique_string.encode()).hexdigest()
     except Exception as e:
         logger.warning(f"Failed to get machine fingerprint: {e}")

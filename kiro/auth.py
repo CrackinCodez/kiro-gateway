@@ -112,6 +112,50 @@ class KiroAuthManager:
         ... )
         >>> token = await auth_manager.get_access_token()
     """
+
+    @staticmethod
+    def _parse_iso_datetime(datetime_str: str) -> datetime:
+        """
+        Parse ISO 8601 datetime with support for nanosecond precision.
+
+        Python 3.10's datetime.fromisoformat supports at most 6 fractional
+        second digits. Some Kiro/CLI sources persist 9-digit nanoseconds, so
+        we normalize by truncating fractional seconds to microsecond precision.
+
+        Args:
+            datetime_str: ISO 8601 datetime string.
+
+        Returns:
+            Parsed datetime object.
+
+        Raises:
+            ValueError: If datetime string is invalid.
+        """
+        normalized = datetime_str.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized[:-1] + "+00:00"
+
+        if "." in normalized:
+            prefix, suffix = normalized.split(".", 1)
+            tz_start = None
+            for marker in ("+", "-"):
+                idx = suffix.find(marker)
+                if idx > 0:
+                    tz_start = idx
+                    break
+
+            if tz_start is None:
+                fractional = suffix
+                tz_part = ""
+            else:
+                fractional = suffix[:tz_start]
+                tz_part = suffix[tz_start:]
+
+            digits_only = "".join(ch for ch in fractional if ch.isdigit())
+            if digits_only:
+                normalized = f"{prefix}.{digits_only[:6]}{tz_part}"
+
+        return datetime.fromisoformat(normalized)
     
     def __init__(
         self,
@@ -259,16 +303,12 @@ class KiroAuthManager:
                     if 'scopes' in token_data:
                         self._scopes = token_data['scopes']
                     
-                    # Parse expires_at (RFC3339 format)
+                    # Parse expires_at (RFC3339/ISO 8601, including nanosecond precision)
                     if 'expires_at' in token_data:
                         try:
                             expires_str = token_data['expires_at']
-                            # Handle various ISO 8601 formats
-                            if expires_str.endswith('Z'):
-                                self._expires_at = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
-                            else:
-                                self._expires_at = datetime.fromisoformat(expires_str)
-                        except Exception as e:
+                            self._expires_at = self._parse_iso_datetime(expires_str)
+                        except ValueError as e:
                             logger.warning(f"Failed to parse expires_at from SQLite: {e}")
             
             # Load device registration (client_id, client_secret) - try all possible keys
@@ -360,16 +400,12 @@ class KiroAuthManager:
             if 'clientSecret' in data:
                 self._client_secret = data['clientSecret']
             
-            # Parse expiresAt
+            # Parse expiresAt (RFC3339/ISO 8601, including nanosecond precision)
             if 'expiresAt' in data:
                 try:
                     expires_str = data['expiresAt']
-                    # Support for different date formats
-                    if expires_str.endswith('Z'):
-                        self._expires_at = datetime.fromisoformat(expires_str.replace('Z', '+00:00'))
-                    else:
-                        self._expires_at = datetime.fromisoformat(expires_str)
-                except Exception as e:
+                    self._expires_at = self._parse_iso_datetime(expires_str)
+                except ValueError as e:
                     logger.warning(f"Failed to parse expiresAt: {e}")
             
             logger.info(f"Credentials loaded from {file_path}")
