@@ -50,6 +50,7 @@ from kiro.converters_openai import build_kiro_payload
 from kiro.streaming_openai import stream_kiro_to_openai, collect_stream_response, stream_with_first_token_retry
 from kiro.http_client import KiroHttpClient
 from kiro.utils import generate_conversation_id
+from kiro.tokenizer import count_tokens
 
 # Import debug_logger
 try:
@@ -240,11 +241,13 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
         profile_arn_for_payload = auth_manager.profile_arn
     
     try:
-        kiro_payload = build_kiro_payload(
+        kiro_result = build_kiro_payload(
             request_data,
             conversation_id,
             profile_arn_for_payload
         )
+        kiro_payload = kiro_result.payload
+        tool_name_mapping = kiro_result.tool_name_mapping
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
@@ -324,10 +327,12 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                 }
             )
         
-        # Prepare data for fallback token counting
-        # Convert Pydantic models to dicts for tokenizer
-        messages_for_tokenizer = [msg.model_dump() for msg in request_data.messages]
-        tools_for_tokenizer = [tool.model_dump() for tool in request_data.tools] if request_data.tools else None
+        # Count prompt tokens from the full Kiro payload (system prompt + messages + tools)
+        # This matches what actually gets sent to the API, giving accurate token counts
+        kiro_payload_prompt_tokens = count_tokens(
+            kiro_request_body.decode('utf-8', errors='ignore'),
+            apply_claude_correction=False
+        )
         
         if request_data.stream:
             # Streaming mode
@@ -341,8 +346,8 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                         request_data.model,
                         model_cache,
                         auth_manager,
-                        request_messages=messages_for_tokenizer,
-                        request_tools=tools_for_tokenizer
+                        prompt_tokens=kiro_payload_prompt_tokens,
+                        tool_name_mapping=tool_name_mapping
                     ):
                         yield chunk
                 except GeneratorExit:
@@ -387,8 +392,8 @@ async def chat_completions(request: Request, request_data: ChatCompletionRequest
                 request_data.model,
                 model_cache,
                 auth_manager,
-                request_messages=messages_for_tokenizer,
-                request_tools=tools_for_tokenizer
+                prompt_tokens=kiro_payload_prompt_tokens,
+                tool_name_mapping=tool_name_mapping
             )
             
             await http_client.close()
