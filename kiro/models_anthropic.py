@@ -97,9 +97,10 @@ class ServerToolUseContentBlock(BaseModel):
     """
 
     type: Literal["server_tool_use"] = "server_tool_use"
-    id: str
-    name: str
-    input: Dict[str, Any]
+    id: Optional[str] = None
+    name: Optional[str] = None
+    input: Optional[Dict[str, Any]] = None
+    model_config = {"extra": "allow"}
 
 
 class McpToolUseContentBlock(BaseModel):
@@ -127,7 +128,13 @@ class ToolReferenceContentBlock(BaseModel):
 
     type: Literal["tool_reference"] = "tool_reference"
     tool_name: str
+    model_config = {"extra": "allow"}
 
+
+class ToolSearchResultContentBlock(BaseModel):
+    """Tool search result block returned by Anthropic's tool search feature."""
+
+    type: Literal["tool_search_tool_result"] = "tool_search_tool_result"
     model_config = {"extra": "allow"}
 
 
@@ -156,6 +163,8 @@ class ToolResultContentBlock(BaseModel):
         ]
     ] = None
     is_error: Optional[bool] = None
+
+    model_config = {"extra": "allow"}
 
 
 # ==================================================================================================
@@ -244,7 +253,7 @@ class AdvisorToolResultContentBlock(BaseModel):
     model_config = {"extra": "allow"}
 
 
-# Union type for all content blocks (including images, thinking, and tool references)
+# Union type for all content blocks (including images, thinking, and tool search)
 ContentBlock = Union[
     TextContentBlock,
     ThinkingContentBlock,
@@ -257,6 +266,7 @@ ContentBlock = Union[
     ToolResultContentBlock,
     ToolReferenceContentBlock,
     AdvisorToolResultContentBlock,
+    ToolSearchResultContentBlock,
     Dict[str, Any],
 ]
 
@@ -299,6 +309,7 @@ class AnthropicTool(BaseModel):
         description: Tool description (optional but recommended)
         input_schema: JSON Schema for tool parameters (required for custom tools, absent for server tools)
         type: Tool type identifier for built-in tools (e.g. "web_search_20250305")
+        defer_loading: Whether tool can be deferred until referenced (Claude Code tool search)
     """
 
     model_config = {"extra": "allow"}
@@ -307,6 +318,7 @@ class AnthropicTool(BaseModel):
     description: Optional[str] = None
     input_schema: Optional[Dict[str, Any]] = None
     type: Optional[str] = None
+    defer_loading: Optional[bool] = False
 
 
 class ToolChoiceAuto(BaseModel):

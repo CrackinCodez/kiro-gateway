@@ -80,10 +80,12 @@ class UnifiedTool:
         name: Tool name
         description: Tool description
         input_schema: JSON Schema for tool parameters
+        _defer_loading: If True, tool is deferred (not sent to Kiro until referenced)
     """
     name: str
     description: Optional[str] = None
     input_schema: Optional[Dict[str, Any]] = None
+    _defer_loading: bool = False
 
 
 @dataclass
