@@ -1,6 +1,7 @@
 # Environment
 .env
 .env.local
+.venv/
 
 # IDE
 .vscode/
@@ -29,4 +30,4 @@ requests/
 .pytest_cache/
 .coverage
 htmlcov/
-data.sqlite3
+*.sqlite3
